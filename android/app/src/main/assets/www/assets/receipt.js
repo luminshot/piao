@@ -6,20 +6,23 @@
   'use strict';
 
   const BASE_W = 320;
-  const PAD = 17;
+  const PAD = 24;
+  const V_PAD = 24;
   const TOOTH = 8;
+  const BOTTOM_PAD = Math.max(0, V_PAD - TOOTH);
   const FONTS = {
-    mono:  '"SF Mono","Menlo","Roboto Mono","PingFang SC","Hiragino Sans GB","Microsoft YaHei",monospace',
+    mono:  'monospace,"Roboto Mono","SF Mono","Menlo","Noto Sans Mono CJK SC","PingFang SC","Microsoft YaHei"',
     sans:  'system-ui,"Hiragino Sans GB","Microsoft YaHei",sans-serif',
     serif: '"Songti SC","STSong","SimSun","Noto Serif SC","Source Han Serif SC",serif'
   };
-  const PAPERS = { cream: '#FAF8F2', warm: '#F8F2E3', cool: '#F1F2F0', blue: '#EEF4F7', white: '#FFFFFF' };
+  const PAPERS = { cream: '#FAF8F2', warm: '#F8F2E3', cool: '#F1F2F0', white: '#FFFFFF' };
 
   let FONT = FONTS.sans;
   const INK = '#302F2B';
   const INK_SOFT = '#5C5B54';
   const INK_FAINT = '#858278';
   const RULE = '#D8D2C5';
+  const MONO_TRACKING = 0.24;
 
   /* ---------- 基础 ---------- */
   let meas = null;
@@ -43,7 +46,7 @@
   function drawText(ctx, text, x, y, o) {
     o = o || {};
     const size = o.size || 12.2;
-    const ls = o.ls || 0;
+    const ls = o.ls == null ? (FONT === FONTS.mono ? MONO_TRACKING : 0) : o.ls;
     const align = o.align || 'left';
     setFont(ctx, size, o.weight || 400);
     ctx.fillStyle = o.color || INK;
@@ -62,10 +65,12 @@
     setFont(m, size, weight);
     const out = [];
     let cur = '';
+    const tracking = FONT === FONTS.mono ? MONO_TRACKING : 0;
     for (const ch of Array.from(String(text == null ? '' : text))) {
       if (ch === '\n') { out.push(cur); cur = ''; continue; }
       const t = cur + ch;
-      if (cur && m.measureText(t).width > maxW) { out.push(cur); cur = ch; }
+      const spacedWidth = m.measureText(t).width + Math.max(0, Array.from(t).length - 1) * tracking;
+      if (cur && spacedWidth > maxW) { out.push(cur); cur = ch; }
       else cur = t;
     }
     if (cur) out.push(cur);
@@ -275,9 +280,10 @@
       const vstr = String(v == null || v === '' ? '—' : v);
       const m = M();
       setFont(m, size, 400);
-      const vw = m.measureText(vstr).width;
-      setFont(m, size, 400);
-      const kw = m.measureText(k).width;
+      const tracking = FONT === FONTS.mono ? MONO_TRACKING : 0;
+      const trackedWidth = (text) => m.measureText(text).width + Math.max(0, Array.from(text).length - 1) * tracking;
+      const vw = trackedWidth(vstr);
+      const kw = trackedWidth(k);
       if (kw + vw + 12 <= CW) {
         lines.push({
           h: lh,
@@ -301,43 +307,49 @@
       }
     };
 
-    const amount = (value, o) => {
+    const primaryMoney = (k, v, o) => {
       o = o || {};
-      const hgt = Math.round((o.h || 40) * D.lh);
+      const size = (o.size || 11.6) * D.size;
+      const amountSize = (o.amountSize || 18) * D.size;
+      const lh = Math.round((o.lh || 1.8) * size * D.lh);
+      const amountLh = Math.round(1.1 * amountSize * D.lh);
+      const vstr = String(v == null || v === '' ? '—' : v);
+      const m = M();
+      const tracking = FONT === FONTS.mono ? MONO_TRACKING : 0;
+      setFont(m, size, 400);
+      const kw = measureSpaced(m, k, tracking);
+      const wrapped = wrapText(vstr, Math.max(48, CW - kw - 12), amountSize, 700);
+      const h = Math.max(lh * 2, amountLh * wrapped.length);
       lines.push({
-        h: hgt,
+        h,
         paint(ctx, y) {
-          const num = money(value);
-          const fs = (o.size || 29) * D.size;
-          const weight = o.weight || 600;
-          const currencySize = (o.currencySize || (o.size && o.size < 18 ? o.size : 14)) * D.size;
-          const m = M();
-          setFont(m, fs, weight);
-          const nw = m.measureText(num).width;
-          const right = W - P;
-          const unitGap = fs < 18 ? 4 : 9;
-          drawText(ctx, num, right, y + hgt * 0.58, { size: fs, weight, align: 'right' });
-          drawText(ctx, '¥', right - nw - unitGap, y + hgt * 0.55, { size: currencySize, color: INK_SOFT, align: 'right' });
+          drawText(ctx, k, P, y + h / 2, { size, color: INK_FAINT, weight: 400 });
+          const total = amountLh * wrapped.length;
+          const firstY = y + (h - total) / 2 + amountLh / 2;
+          for (let i = 0; i < wrapped.length; i++) {
+            drawText(ctx, wrapped[i], W - P, firstY + i * amountLh,
+              { size: amountSize, color: o.color || INK, align: 'right', weight: 700 });
+          }
         }
       });
     };
 
-    return { lines, gap, row, rule, kv, amount, W, P, CW };
+    return { lines, gap, row, rule, kv, primaryMoney, W, P, CW };
   }
 
   /* ---------- 品牌区 ---------- */
   function buildBrand(kit, brand) {
     const { row, gap } = kit;
-    gap(10);
-    if (brand && brand.en) row(brand.en, { size: 8.6, align: 'center', ls: 3.2, color: INK_FAINT, lh: 1.8 });
-    if (brand && brand.cn) row(brand.cn, { size: 16, weight: 600, align: 'center', ls: 2.4, lh: 1.8 });
+    gap(0);
+    if (brand && brand.en) row(brand.en, { size: 8.6, align: 'center', ls: 3.2, color: INK_FAINT, lh: 1.4 });
+    if (brand && brand.cn) row(brand.cn, { size: 14, weight: 600, align: 'center', ls: 2.4, lh: 1.4 });
     return kit.lines;
   }
 
   /* ---------- 正文（固定四板块模板） ---------- */
   function buildBody(tpl, values, W, dense) {
     const kit = makeKit(W, dense);
-    const { gap, row, rule, kv, amount } = kit;
+    const { gap, row, rule, kv, primaryMoney } = kit;
     const rawSections = (tpl && tpl.sections) || [];
     const legacySections = rawSections.length > 0 && !rawSections.some((s) => s.role);
     const section = (role) => {
@@ -347,20 +359,23 @@
       if (role === 'amount') return rawSections[2] || { fields: [] };
       return { fields: [] };
     };
+    const drawMoney = (f, value) => {
+      if (value == null || String(value).trim() === '') return;
+      const label = f.label || '定金';
+      const amount = '¥ ' + money(value);
+      if (f.emphasis === 'primary') primaryMoney(label, amount, { size: 11.6, amountSize: 18 });
+      else kv(label, amount, { size: 11.6 });
+    };
 
     gap(5);
-    row(tpl.name || '定金凭证', { size: 29, weight: 700, align: 'center', ls: 1.5, lh: 1.5 });
+    row(tpl.name || '定金凭证', { size: 26, weight: 700, align: 'center', ls: 1.5, lh: 1.5 });
     gap(4);
 
     rule();
     (section('body').fields || []).forEach((f) => {
       const v = values[f.id];
       if (f.type === 'money') {
-        if (v == null || String(v).trim() === '') return;
-        const primary = f.emphasis === 'primary' || f.id === 'f-money' || f.label === '定金';
-        gap(2);
-        row(f.label || '定金', { size: 10.2, color: INK_FAINT, lh: 1.8 });
-        amount(v, { h: primary ? 40 : 22, size: primary ? 29 : 11.6, weight: primary ? 600 : 500 });
+        drawMoney(f, v);
       } else {
         kv(f.label || '', v, { size: 11.6 });
       }
@@ -370,11 +385,7 @@
     (section('amount').fields || []).forEach((f) => {
       const v = values[f.id];
       if (f.type === 'money') {
-        if (v == null || String(v).trim() === '') return;
-        const primary = f.emphasis === 'primary' || f.id === 'f-money' || f.label === '定金';
-        gap(2);
-        row(f.label || '定金', { size: 10.2, color: INK_FAINT, lh: 1.8 });
-        amount(v, { h: primary ? 40 : 22, size: primary ? 29 : 11.6, weight: primary ? 600 : 500 });
+        drawMoney(f, v);
       } else {
         kv(f.label || '', v, { size: 11.6 });
       }
@@ -443,20 +454,21 @@
       const head = buildBrand(makeKit(W, dense), tpl.brand);
       const body = buildBody(tpl, values, W, dense);
       const foot = buildFooter(rec, W, dense);
-      const total = head.concat(body, foot).reduce((a, l) => a + l.h, 0) + TOOTH;
+      const total = head.concat(body, foot).reduce((a, l) => a + l.h, 0) + TOOTH + V_PAD + BOTTOM_PAD;
       chosen = { head, body, foot };
       if (!frameTarget || total <= frameTarget) break;
     }
 
     const naturalH0 = chosen.head.concat(chosen.body, chosen.foot).reduce((a, l) => a + l.h, 0) + TOOTH;
-    const spare = frameTarget ? Math.max(0, frameTarget - naturalH0) : 0;
+    const spare = frameTarget ? Math.max(0, frameTarget - V_PAD - BOTTOM_PAD - naturalH0) : 0;
     const lines = chosen.head.concat(chosen.body)
       .concat(spare ? [{ h: spare, paint() {} }] : [])
       .concat(chosen.foot);
 
     const naturalH = lines.reduce((a, l) => a + l.h, 0) + TOOTH;
-    const scale = frameTarget && naturalH > frameTarget ? frameTarget / naturalH : 1;
-    const h = Math.round(frameTarget ? Math.max(naturalH * scale, frameTarget) : naturalH);
+    const availableContentH = frameTarget ? Math.max(1, frameTarget - V_PAD - BOTTOM_PAD) : naturalH;
+    const scale = frameTarget && naturalH > availableContentH ? availableContentH / naturalH : 1;
+    const h = frameTarget ? frameTarget : Math.round(naturalH + V_PAD + BOTTOM_PAD);
 
     const mk = () => {
       const c = document.createElement('canvas');
@@ -468,8 +480,8 @@
       g.scale(dpr, dpr);
       return { c, g };
     };
-    const paintContent = (g) => {
-      let y = 0;
+    const paintContent = (g, topOffset) => {
+      let y = topOffset || 0;
       for (const l of lines) { l.paint(g, y); y += l.h; }
     };
 
@@ -482,10 +494,10 @@
       tmp.height = Math.round(naturalH * dpr);
       const tg = tmp.getContext('2d');
       tg.scale(dpr, dpr);
-      paintContent(tg);
-      full.g.drawImage(tmp, (W - W * scale) / 2, 0, W * scale, naturalH * scale);
+      paintContent(tg, 0);
+      full.g.drawImage(tmp, (W - W * scale) / 2, V_PAD, W * scale, naturalH * scale);
     } else {
-      paintContent(full.g);
+      paintContent(full.g, V_PAD);
     }
 
     const mask = mk();

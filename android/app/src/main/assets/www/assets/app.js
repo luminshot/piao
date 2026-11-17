@@ -1,5 +1,5 @@
 /* ===========================================================
-   app.js —— 小票来了 v1.0.1
+   app.js —— 小票来了 v1.0.3
    模板可自定义：开单 / 打印 / 票夹（搜索·分类·回收站）/ 设置 / 模板编辑
    =========================================================== */
 (function () {
@@ -7,6 +7,9 @@
 
   const $ = (id) => document.getElementById(id);
   const TPL = window.TPL;
+  const APP_VERSION = '1.0.3';
+  const LATEST_RELEASE_API = 'https://api.github.com/repos/luminshot/piao/releases/latest';
+  const LATEST_RELEASE_PAGE = 'https://github.com/luminshot/piao/releases/latest';
 
   const RATIOS = [
     { id: '3:4', label: '3:4', v: 4 / 3 },
@@ -17,7 +20,7 @@
   const DEFAULTS = {
     paperMm: 58, ratioId: '9:16', ratio: 16 / 9,
     font: 'mono', fontSize: 'standard', density: 'standard', dividerStyle: 'solid',
-    paper: 'cream', texture: 'fine', tear: 'zigzag',
+    paper: 'cool', texture: 'grain', tear: 'straight',
     visualPreset: 3, sound: true, volume: 0.85
   };
   const FONT_OPTS = [{ v: 'mono', t: '等宽' }, { v: 'sans', t: '黑体' }, { v: 'serif', t: '宋体' }];
@@ -28,8 +31,7 @@
   const TEAR_OPTS = [{ v: 'straight', t: '平切' }, { v: 'zigzag', t: '锯齿' }];
   const PAPER_OPTS = [
     { v: 'white', t: '纯白', c: '#FFFFFF' }, { v: 'cream', t: '暖白', c: '#FAF8F2' },
-    { v: 'cool', t: '浅灰', c: '#F1F2F0' }, { v: 'blue', t: '浅蓝', c: '#EEF4F7' },
-    { v: 'warm', t: '浅黄', c: '#F8F2E3' }
+    { v: 'cool', t: '浅灰', c: '#F1F2F0' }, { v: 'warm', t: '浅黄', c: '#F8F2E3' }
   ];
 
   const el = {
@@ -945,7 +947,6 @@
       b.setAttribute('aria-label', o.t);
       b.addEventListener('click', () => onPick(o.v));
       option.appendChild(b);
-      option.appendChild(h('span', 'sw-label', o.t));
       s.appendChild(option);
     });
     return s;
@@ -955,6 +956,55 @@
     b.type = 'button';
     b.addEventListener('click', () => onPick(!on));
     return b;
+  }
+
+  function compareVersions(a, b) {
+    const parts = (value) => String(value).replace(/^v/i, '').split('.').map((part) => parseInt(part, 10) || 0);
+    const left = parts(a), right = parts(b);
+    for (let i = 0; i < Math.max(left.length, right.length); i++) {
+      const delta = (left[i] || 0) - (right[i] || 0);
+      if (delta) return delta > 0 ? 1 : -1;
+    }
+    return 0;
+  }
+
+  async function checkForUpdates(button, status) {
+    if (!button || button.disabled) return;
+    button.disabled = true;
+    button.textContent = '正在检查…';
+    status.textContent = '正在连接 GitHub…';
+    try {
+      const response = await fetch(LATEST_RELEASE_API, {
+        headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store'
+      });
+      if (response.status === 404) {
+        status.textContent = '暂时找不到更新信息，发布页可能尚未上线。';
+        return;
+      }
+      if (!response.ok) throw new Error('release request failed');
+      const release = await response.json();
+      const tag = String(release.tag_name || '').trim().replace(/^v/i, '');
+      if (!/^\d+(?:\.\d+)*$/.test(tag)) throw new Error('invalid release tag');
+      if (compareVersions(tag, APP_VERSION) <= 0) {
+        status.textContent = `当前版本 v${APP_VERSION}，暂无更新。`;
+        return;
+      }
+      status.textContent = `发现新版本 v${tag}。`;
+      if (window.confirm(`发现新版本 v${tag}，是否打开 GitHub 发布页下载安装？`)) {
+        let target = LATEST_RELEASE_PAGE;
+        try {
+          const candidate = new URL(release.html_url || LATEST_RELEASE_PAGE);
+          if (candidate.origin === 'https://github.com'
+              && candidate.pathname.toLowerCase().startsWith('/luminshot/piao/releases/')) target = candidate.href;
+        } catch (e) { /* keep the trusted fallback URL */ }
+        window.location.href = target;
+      }
+    } catch (e) {
+      status.textContent = '连接失败，请稍后重试。';
+    } finally {
+      button.disabled = false;
+      button.textContent = '检查更新';
+    }
   }
 
   function buildSettings() {
@@ -1057,10 +1107,58 @@
     body.appendChild(group('质感', rows3));
     body.appendChild(group('效果', rows4));
     body.appendChild(g5);
+
+    const updateButton = h('button', 'set-action', '检查更新');
+    updateButton.id = 'btn-check-updates';
+    updateButton.type = 'button';
+    const updateStatus = h('p', 'update-status');
+    updateStatus.id = 'update-status';
+    updateStatus.setAttribute('role', 'status');
+    updateStatus.setAttribute('aria-live', 'polite');
+    updateButton.addEventListener('click', () => checkForUpdates(updateButton, updateStatus));
+    body.appendChild(group('关于', [
+      row('当前版本', h('span', 'about-line', 'v' + APP_VERSION)),
+      updateButton,
+      updateStatus
+    ]));
   }
 
   /* ---------------- 事件 ---------------- */
+  function bindPageDragGuard() {
+    let touchX = 0, touchY = 0;
+    document.addEventListener('touchstart', (event) => {
+      const touch = event.touches && event.touches[0];
+      if (touch) { touchX = touch.clientX; touchY = touch.clientY; }
+    }, { passive: true });
+    document.addEventListener('touchmove', (event) => {
+      if (!event.cancelable || !event.touches || event.touches.length !== 1) return;
+      const touch = event.touches[0];
+      const dx = touch.clientX - touchX, dy = touch.clientY - touchY;
+      touchX = touch.clientX; touchY = touch.clientY;
+      if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
+      const target = event.target;
+      const horizontal = target.closest && target.closest('.tpl-row');
+      if (horizontal && Math.abs(dx) > Math.abs(dy)) return;
+      const scrollArea = target.closest && target.closest('.sheet-body, .page-body');
+      if (scrollArea) {
+        const atTop = scrollArea.scrollTop <= 1;
+        const atBottom = scrollArea.scrollTop + scrollArea.clientHeight >= scrollArea.scrollHeight - 1;
+        if ((dy > 0 && atTop) || (dy < 0 && atBottom)) event.preventDefault();
+        return;
+      }
+      event.preventDefault();
+    }, { passive: false });
+    document.addEventListener('wheel', (event) => {
+      const target = event.target;
+      if (target.closest && target.closest('.sheet-body, .page-body')) return;
+      const horizontal = target.closest && target.closest('.tpl-row');
+      if (horizontal && Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+      event.preventDefault();
+    }, { passive: false });
+  }
+
   function bind() {
+    bindPageDragGuard();
     window.Printer.mount(el);
 
     $('btn-print').addEventListener('click', () => {
