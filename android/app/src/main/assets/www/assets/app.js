@@ -1,5 +1,5 @@
 /* ===========================================================
-   app.js —— 小票来了 v1.0.3
+   app.js —— 小票来了 v1.0.4
    模板可自定义：开单 / 打印 / 票夹（搜索·分类·回收站）/ 设置 / 模板编辑
    =========================================================== */
 (function () {
@@ -7,7 +7,7 @@
 
   const $ = (id) => document.getElementById(id);
   const TPL = window.TPL;
-  const APP_VERSION = '1.0.3';
+  const APP_VERSION = '1.0.4';
   const LATEST_RELEASE_API = 'https://api.github.com/repos/luminshot/piao/releases/latest';
   const LATEST_RELEASE_PAGE = 'https://github.com/luminshot/piao/releases/latest';
 
@@ -970,6 +970,7 @@
 
   async function checkForUpdates(button, status) {
     if (!button || button.disabled) return;
+    let nativeDownloadStarted = false;
     button.disabled = true;
     button.textContent = '正在检查…';
     status.textContent = '正在连接 GitHub…';
@@ -990,6 +991,39 @@
         return;
       }
       status.textContent = `发现新版本 v${tag}。`;
+      if (window.AndroidApp && typeof window.AndroidApp.startUpdate === 'function') {
+        const expectedName = `piao-v${tag}.apk`;
+        const asset = Array.isArray(release.assets)
+          ? release.assets.find((item) => item && item.name === expectedName) : null;
+        if (!asset) {
+          status.textContent = '发布页暂时没有可用的 APK，请稍后重试。';
+          return;
+        }
+        const size = Number(asset.size);
+        const digest = String(asset.digest || '');
+        let assetUrl;
+        try { assetUrl = new URL(asset.browser_download_url || ''); }
+        catch (e) { assetUrl = null; }
+        const expectedPath = `/luminshot/piao/releases/download/v${tag}/${expectedName}`;
+        if (!assetUrl || assetUrl.protocol !== 'https:' || assetUrl.hostname.toLowerCase() !== 'github.com'
+            || assetUrl.pathname.toLowerCase() !== expectedPath.toLowerCase()
+            || !/^sha256:[a-f0-9]{64}$/i.test(digest)
+            || !Number.isSafeInteger(size) || size <= 0 || size > 100 * 1024 * 1024) {
+          status.textContent = '更新包信息不完整或无法校验，请稍后重试。';
+          return;
+        }
+        if (window.confirm(`发现新版本 v${tag}。确定后将在 App 内下载，下载完成再由 Android 确认安装。现在下载吗？`)) {
+          nativeDownloadStarted = true;
+          window.__xpl.nativeUpdateProgress('starting', 0, `准备下载 v${tag}…`);
+          try {
+            window.AndroidApp.startUpdate(assetUrl.href, tag, digest, size);
+          } catch (e) {
+            nativeDownloadStarted = false;
+            throw e;
+          }
+        }
+        return;
+      }
       if (window.confirm(`发现新版本 v${tag}，是否打开 GitHub 发布页下载安装？`)) {
         let target = LATEST_RELEASE_PAGE;
         try {
@@ -1000,10 +1034,12 @@
         window.location.href = target;
       }
     } catch (e) {
-      status.textContent = '连接失败，请稍后重试。';
+      status.textContent = '连接或启动更新失败，请检查网络后重试。';
     } finally {
-      button.disabled = false;
-      button.textContent = '检查更新';
+      if (!nativeDownloadStarted) {
+        button.disabled = false;
+        button.textContent = '检查更新';
+      }
     }
   }
 
@@ -1111,6 +1147,12 @@
     const updateButton = h('button', 'set-action', '检查更新');
     updateButton.id = 'btn-check-updates';
     updateButton.type = 'button';
+    const updateProgress = h('progress', 'update-progress');
+    updateProgress.id = 'update-progress';
+    updateProgress.max = 100;
+    updateProgress.value = 0;
+    updateProgress.hidden = true;
+    updateProgress.setAttribute('aria-label', '更新下载进度');
     const updateStatus = h('p', 'update-status');
     updateStatus.id = 'update-status';
     updateStatus.setAttribute('role', 'status');
@@ -1119,6 +1161,7 @@
     body.appendChild(group('关于', [
       row('当前版本', h('span', 'about-line', 'v' + APP_VERSION)),
       updateButton,
+      updateProgress,
       updateStatus
     ]));
   }
@@ -1290,7 +1333,22 @@
     selectTemplate(id) { S.tplId = id; prefillValues(tpl()); buildTemplateCards(); buildForm(); renderCurrent(); },
     openEditor, openSettings: () => { buildSettings(); openPage(el.pageSet); },
     exportImage, renderClip, handleBack,
-    nativeSaveResult(ok) { toast(ok ? '文件已保存' : '保存失败，请重试'); }
+    nativeSaveResult(ok) { toast(ok ? '文件已保存' : '保存失败，请重试'); },
+    nativeUpdateProgress(state, percent, message) {
+      const status = $('update-status');
+      const progress = $('update-progress');
+      const button = $('btn-check-updates');
+      if (status) status.textContent = message || '';
+      if (progress) {
+        progress.hidden = state !== 'downloading' && state !== 'verifying';
+        progress.value = Math.max(0, Math.min(100, Number(percent) || 0));
+      }
+      if (button) {
+        button.disabled = ['starting', 'permission', 'downloading', 'verifying'].includes(state);
+        button.textContent = state === 'downloading' ? '正在下载…'
+          : state === 'verifying' ? '正在校验…' : '检查更新';
+      }
+    }
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

@@ -45,6 +45,7 @@ public final class MainActivity extends ComponentActivity {
     private WebView webView;
     private ValueCallback<Uri[]> filePathCallback;
     private byte[] pendingSaveBytes;
+    private AppUpdateManager updateManager;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -153,6 +154,7 @@ public final class MainActivity extends ComponentActivity {
                 }
             }
         });
+        updateManager = new AppUpdateManager(this, webView);
         webView.addJavascriptInterface(new NativeFiles(), "AndroidApp");
 
         if (savedInstanceState != null && webView.restoreState(savedInstanceState) != null) return;
@@ -168,6 +170,11 @@ public final class MainActivity extends ComponentActivity {
         @JavascriptInterface
         public void shareFile(String name, String mimeType, String encoded) {
             receiveFile(name, mimeType, encoded, true);
+        }
+
+        @JavascriptInterface
+        public void startUpdate(String assetUrl, String version, String digest, double expectedSize) {
+            if (updateManager != null) updateManager.startUpdate(assetUrl, version, digest, expectedSize);
         }
     }
 
@@ -300,10 +307,15 @@ public final class MainActivity extends ComponentActivity {
     protected void onResume() {
         super.onResume();
         if (webView != null) webView.onResume();
+        if (updateManager != null) updateManager.onResume();
     }
 
     @Override
     protected void onDestroy() {
+        if (updateManager != null) {
+            updateManager.onDestroy();
+            updateManager = null;
+        }
         if (filePathCallback != null) {
             filePathCallback.onReceiveValue(null);
             filePathCallback = null;

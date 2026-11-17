@@ -1,12 +1,12 @@
-# 小票来了 Android v1.0.3
+# 小票来了 Android v1.0.4
 
-Android WebView 应用，网页资源随安装包一起分发，不依赖预览服务器。开单、打印和票据数据可离线使用；手动检查版本更新时会连接 GitHub Releases。
+Android WebView 应用，网页资源随安装包一起分发，不依赖预览服务器。开单、打印和票据数据可离线使用；检查更新后可在 App 内下载 APK，并交给 Android 系统确认安装。
 
 ## 版本
 
 - App 名称：小票来了
 - `applicationId`：`com.luminshot.piao`（上架包名，后续更新不要更改）
-- `versionName`：1.0.3；`versionCode`：4
+- `versionName`：1.0.4；`versionCode`：5
 - 最低 Android：8.0（API 26）
 - 编译 API：37；目标 API：36
 
@@ -23,4 +23,4 @@ Android WebView 应用，网页资源随安装包一起分发，不依赖预览�
 
 - 首次安装会建立独立的本地数据；网页浏览器中的数据不会自动搬过来。先在网页版“设置”里导出备份，再在 App 中恢复。
 - Android 使用系统文件选择器导入 JSON 备份；PNG 和 JSON 导出可选保存位置，PNG 分享会打开系统分享面板。
-- 仅用于手动检查 GitHub 版本更新的网络权限；票据数据留在设备本地。系统备份关闭，跨设备迁移请用应用内备份文件。
+- 网络权限仅用于检查 GitHub 更新并下载 APK；首次安装更新时，Android 可能要求允许“小票来了”安装未知应用，最终安装仍需用户在系统界面确认。票据数据留在设备本地；系统备份关闭，跨设备迁移请用应用内备份文件。
